@@ -18,6 +18,7 @@ int main(int argc, char *argv[])
     char t_type='0';
     int filesize;
     int rr, i;
+    off_t x;
 
     if(argc < 3)
     {
@@ -55,23 +56,25 @@ int main(int argc, char *argv[])
 
     filesize = lseek(infile, (off_t)0, SEEK_END);
     
-    printf("The File Size was: %d\n", filesize);
-    
-    for(i = filesize-1; i > 1; i--)
+    for(i = filesize-1; i > 0; i--)
     {
          switch(t_type)
          {
              case '0':
-                 printf("OFFSET:%d - %d\n", t_type, i-filesize-1);
                  lseek(infile, (off_t)i-filesize-1, SEEK_END);
                  break;
              case '1':
-                 printf("OFFSET:%d - %d\n", t_type, filesize-1-i);
-                 lseek(infile, (off_t)i, SEEK_SET);
+                 lseek(infile, (off_t)i-1, SEEK_SET);
                  break;
              case '2':
-                 printf("OFFSET:%d - %d\n",t_type, -1);
-                 lseek(infile, (off_t)1, SEEK_CUR);
+                 if(i == filesize-1)
+                 {
+                     lseek(infile, (off_t)-1, SEEK_CUR);
+                 }
+                 else
+                 {
+                     lseek(infile, (off_t)-2, SEEK_CUR);
+                 }
                  break;
              default:
                  fprintf(stderr, "ERROR: No Traverse Type");
