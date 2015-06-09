@@ -1,5 +1,5 @@
 COMP = gcc
-OUTPUT = assignment2
+OUTPUT = copy
 
 
 main:

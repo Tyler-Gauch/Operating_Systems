@@ -23,14 +23,14 @@ int main ( int argc, char *argv[]) {
         //open infile
         if((infile = open(argv[1], O_RDONLY)) < 0)
         {
-               fprintf(stderr, "Could not open inputfile: %s\n", argv[1]);
+               perror("Could not open inputfile: ");
                return -2;
         }
 
         //open outfile
         if((outfile = open(argv[2], O_WRONLY|O_CREAT|O_TRUNC, 0644)) < 0)
         {
-               fprintf(stderr, "Could not open ouputfile: %s\n", argv[2]);
+               perror("Could not open ouputfile: ");
                close(infile);
                return -3;
         }
@@ -42,7 +42,7 @@ int main ( int argc, char *argv[]) {
             readBytes = write(outfile, buffer, readBytes);
             if(readBytes <= 0)
             {
-                fprintf(stderr, "Could not write to output file.\n");
+                perror("Could not write to output file: ");
                 return -4;
             }
         }

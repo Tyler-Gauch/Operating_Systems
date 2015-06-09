@@ -1,5 +1,5 @@
 COMP = gcc
-OUTPUT = assignment1
+OUTPUT = reverse
 
 
 main:
