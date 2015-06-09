@@ -1,10 +1,10 @@
 COMP = gcc
 OUTPUT = copy
+OUTPUT2 = dir_copy
 
 
 main:
-	$(COMP) *.c -o $(OUTPUT)
-run:
-	$(OUTPUT)
-all: main run
+	$(COMP) assignment2.c -o $(OUTPUT)
+	$(COMP) assignment2_extra.c -o $(OUTPUT2)
+
 

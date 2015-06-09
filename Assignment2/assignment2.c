@@ -10,12 +10,13 @@
 #include <fcntl.h>
 #include <stdio.h>
 
+#define BUFSIZE 256
 
 int main ( int argc, char *argv[]) {
-	char buffer[256];
+	char buffer[BUFSIZE];
         int infile, outfile;
 
-	if( argc !=3 ) {
+	if( argc != 3 ) {
 		fprintf(stderr, "USAGE: %s inputFile outputFile.\n", argv[0]);
 		return -1;
 	}
@@ -37,7 +38,7 @@ int main ( int argc, char *argv[]) {
 
         //read from the infile until we have nothing left to read
         int readBytes;
-        while((readBytes = read(infile, buffer, 256)) > 0)
+        while((readBytes = read(infile, buffer, BUFSIZE)) > 0)
 	{
             readBytes = write(outfile, buffer, readBytes);
             if(readBytes <= 0)
