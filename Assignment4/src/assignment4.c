@@ -13,24 +13,20 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include "LinkedList.h"
+#include <string.h>
+#include <unistd.h>
 
 
-
-
-#define NPROC	       (16)  /* number of children processes */
 #define TRUE		1
 #define FALSE		0
 #define MARKED 		1   /* lock reserved (lock is taken by a child) */
 #define NOTMARKED 	0   /* lock available (no child process owns this lock) */
-#define MAXCHILDLOCKS	4   /* max resource a child can hold before requesting
-			       'release locks' from the LockManager */
-
-
 #define NO_DEADLOCK 		0	/* there is no deadlock */
 #define DEADLOCK_DETECTED 	1	/* Deadlock detected    */
 
-#define MAXLOCKS		50	/* Total available resources (size of the lock table) */
-
+int MAXLOCKS=50;	/* Total available resources (size of the lock table) */
+int NPROC=2;  /* number of children processes */
+int MAXCHILDLOCKS=4;
 /* 
  * Children send this message to request a lock.
  */
@@ -73,10 +69,10 @@ struct lock {
 /*
  * 'lock' holds all the resources 
  */
-struct lock locks[MAXLOCKS];   /* MAXLOCKS locks for the manager */
-struct Node links[NPROC];	/*Array to detect deadlocks */
+struct lock * locks;   /* MAXLOCKS locks for the manager */
+struct Node * links;	/*Array to detect deadlocks */
 int deadlock = NO_DEADLOCK;	/* When deadlock occurs, exit     */ 
-int pid [NPROC];               	/* Process ids                    */
+int * pid;               	/* Process ids                    */
 
 
 
@@ -395,6 +391,52 @@ int LockManager( int q, struct msg_requestLock ChildRequest, int respond[NPROC] 
  *
  ******************************************************************/
 int main(int argc, char** argv) {
+	int x;
+	for(x = 0; x < argc; x++)
+	{
+		if(strcmp(argv[x], "--help") == 0)
+		{
+			printf("===================================\n");
+			printf("==============HELP MENU============\n");
+			printf("===================================\n");
+			printf("\n");
+			printf("Options:\n");
+			printf("\tOption\t\tDescription\n");
+			printf("\t--maxlocks\tThis will set the max amount of resources available by all processes\n");
+			printf("\t\tusage: --maxlocks <number>\n");
+			printf("\t--nprocs\tThis will set the max number of child processes\n");
+			printf("\t\tusage: --nprocs <number>\n");
+			printf("\t--childlocks\tThis will set the number of resources each child will attempt to get\n");
+			printf("\t\tusage: --childlocks <number>\n");
+			printf("\t--help\tThis will show this help dialogue\n");
+			printf("\t\tusage: --help\n");
+			printf("===================================\n");
+			printf("===================================\n");
+			exit(1);
+		}
+		else if(strcmp(argv[x],"--maxlocks") == 0)
+		{
+			MAXLOCKS = atoi(argv[x+1]);
+			x++;
+		}
+		else if(strcmp(argv[x], "--nprocs") == 0)
+		{
+			NPROC = atoi(argv[x+1]);
+			x++;
+		}
+		else if(strcmp(argv[x], "--childlocks") == 0)
+                {
+                        MAXCHILDLOCKS = atoi(argv[x+1]); 
+                        x++;
+                }
+		else
+		{
+			fprintf(stderr, "'%s' is an invalid parameter", argv[x]);
+		}
+	}
+	locks = malloc(MAXLOCKS * sizeof(locks[0]));
+	links = malloc(NPROC * sizeof(links[0]));
+	pid = malloc(NPROC * sizeof(pid[0]));
 	int i;
 	int listen[NPROC];
 	int respond[NPROC];
