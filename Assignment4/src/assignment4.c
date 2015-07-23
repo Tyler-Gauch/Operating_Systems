@@ -15,18 +15,23 @@
 #include "LinkedList.h"
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/select.h>
 
 
-#define TRUE		1
-#define FALSE		0
-#define MARKED 		1   /* lock reserved (lock is taken by a child) */
-#define NOTMARKED 	0   /* lock available (no child process owns this lock) */
+#define TRUE			1
+#define FALSE			0	
+#define MARKED 			1	/* lock reserved (lock is taken by a child) */
+#define NOTMARKED 		0	/* lock available (no child process owns this lock) */
 #define NO_DEADLOCK 		0	/* there is no deadlock */
 #define DEADLOCK_DETECTED 	1	/* Deadlock detected    */
 
-int MAXLOCKS=50;	/* Total available resources (size of the lock table) */
-int NPROC=2;  /* number of children processes */
-int MAXCHILDLOCKS=4;
+int MAXLOCKS		=	50;	/* Total available resources (size of the lock table) */
+int NPROC		=	2;	/* number of children processes */
+int MAXCHILDLOCKS	=	4; 	/* number of locks each child will try to get */
+
+
 /* 
  * Children send this message to request a lock.
  */
@@ -69,8 +74,8 @@ struct lock {
 /*
  * 'lock' holds all the resources 
  */
-struct lock * locks;   /* MAXLOCKS locks for the manager */
-struct Node * links;	/*Array to detect deadlocks */
+struct lock * locks;   		/* MAXLOCKS locks for the manager */
+struct Node * links;		/*Array to detect deadlocks */
 int deadlock = NO_DEADLOCK;	/* When deadlock occurs, exit     */ 
 int * pid;               	/* Process ids                    */
 
@@ -98,6 +103,15 @@ void child (int pid, int req, int ack) {
 
 	struct msg_requestLock MSG;	/* message from child (me) to parent */
 	struct msg_LockStatus  STAT; 	/* message from parent to child (me) */
+
+
+	struct timeval timeout;
+	timeout.tv_sec = 10;
+	timeout.tv_usec = 0;
+
+	fd_set set;
+	FD_ZERO(&set);
+	FD_SET(ack, &set);
 
 	struct timeval tt;
 
@@ -144,7 +158,22 @@ void child (int pid, int req, int ack) {
 			 * I will get it shortly or the LockManager
 		  	 * will NOT give it to me to prevent a deadlock.
 			 */
-			read ( ack, (char *) &STAT, sizeof(STAT));
+			int rv;
+			rv = select(ack+1, &set, NULL, NULL, &timeout);
+			if(rv == -1)
+			{
+				perror("ERROR: select: ");
+			}
+			else if(rv == 0)
+			{
+				fprintf(stderr, "ERROR: Process %d TIMEOUT", pid);
+				exit(-2);
+			}
+			else
+			{	
+				read ( ack, (char *) &STAT, sizeof(STAT));
+			}
+			
 			if( STAT.status == GRANTED ) {
 				count++;
 				printf("\tChild %d: Got lock %d (%d).\n", pid, MSG.lockID, count);
@@ -179,10 +208,12 @@ void child (int pid, int req, int ack) {
 } /* child */
 
 
-
+/*
+*Prints the contents of the lock table and who owns what lock
+*/
 void print_locktable()
 {
-	FILE * place = stdout;
+	FILE * place = stderr;
 	int i;
 	fprintf(place, "====LOCK TABLE====\n");
 	for(i = 0; i < MAXLOCKS; i++)
@@ -195,11 +226,14 @@ void print_locktable()
 	fprintf(place, "=================\n\n");
 }
 
-
+/*
+*Prints the contents of the link table and who is
+*waiting for who and what they are waiting for
+*/
 void print_linktable()
 {
 	int i = 0;
-	FILE * place = stdout;
+	FILE * place = stderr;
 	fprintf(place, "====LINK TABLE====\n");
 	for(i = 0; i < NPROC; i++)
 	{
@@ -212,38 +246,26 @@ void print_linktable()
 }
 
 
-
+/*
+*Checks if there is a dead lock in the program and returns
+*DEADLOCK_DETECTED or NO_DEADLOCK depening on if there is or is
+*not a deadlock
+*/
 int CheckForDeadLock() {
 	int i = 0;
-	int count = 0;
-	//only set the ones we want to check to discoverable
+	//we check all values in the links array
 	for(i = 0; i < NPROC; i++)
 	{
-		if(links[i].resource > -1)
-		{
-			links[i].status = NOTDISCOVERED;
-			count++;
-		}
-		else
-		{
-			links[i].status = DISCOVERED;
-		}	
-	}
-	//check for deadlock
-	if(count <= 1)
-	{
-		//we only have one process waiting its impossible to have a deadlock
-		return NO_DEADLOCK;
-	}
-	for(i = 0; i < NPROC; i++)
-	{
+		//if we havn't been to this node
 		if(links[i].status== NOTDISCOVERED)
 		{
+			//visit it and its children
 			links[i].status = DISCOVERED;
 			int has_link = TRUE;
 			int child = links[i].waiter;
 			while(has_link == TRUE)
 			{
+				//if we have discovered the node before we have a deadlock else we dont
 				if(links[child].status == NOTDISCOVERED)
 				{
 					links[child].status = DISCOVERED;
@@ -392,7 +414,7 @@ int LockManager( int q, struct msg_requestLock ChildRequest, int respond[NPROC] 
  ******************************************************************/
 int main(int argc, char** argv) {
 	int x;
-	for(x = 0; x < argc; x++)
+	for(x = 1; x < argc; x++)
 	{
 		if(strcmp(argv[x], "--help") == 0)
 		{
