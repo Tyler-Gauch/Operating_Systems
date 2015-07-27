@@ -27,6 +27,7 @@
 #define DIRECTORY 	2
 
 #define QUELENGTH	5
+#define NO_FILE 	-1
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 void GetMyHomeDir(char *myhome, char **environ) {
@@ -54,8 +55,8 @@ int TypeOfFile(char *fullPathToFile) {
 		fprintf(stderr, "[ERROR] stat() on file: |%s|\n", 
 						fullPathToFile);
 		fflush(stderr);
-                exit(-1);
-        }
+        	return -1;
+	}
 
 
         if( S_ISREG(buf.st_mode) )
@@ -66,37 +67,175 @@ int TypeOfFile(char *fullPathToFile) {
 	return(ERROR_FILE);
 }
 
-void getErrorDocument(int status)
+char * getErrorDocument(int status)
 {
-	char Response[1024];
+	char * Response;
 
 	switch(status)
 	{
 		case 500:
-			strcpy(Response, "HTTP/1.0 500 Internal Server Error\nContent-length: 1024\nContent-type: text/html\n\n<html><head><title>Internal Server Error</title></head><body>An unknown error has occured</body></html>");
+			Response = "<html><head><title>Internal Server Error</title></head><body>An unknown error has occured</body></html>";
+			break;
+		case 404:
+			Response = "<html><head><title>Page Not Found</title></head><body>Page was not found on the server</body></html>";
+			break;
+	}
+	return Response;
+}
+
+
+#define HTML 0
+#define JPEG 1
+#define BITMAP 2
+void buildHeader(char * Header, int status, int fileSize, int fileType)
+{
+	
+	char * s;
+	char * t;
+	bzero(Header, sizeof(Header));	
+	switch(status)
+	{
+		case 200:
+			s = "OK";
+			break;
+		case 500:
+			s = "Internal Server Error";
+			break;
+		case 404:
+			s = "Not Found";
+	}
+	switch(fileType)
+	{
+		case HTML:
+			t = "text/html";
+			break;
+		case JPEG:
+			t = "image/jpeg";
+		case BITMAP:
+			t = "image/bmp";
+			
+	}
+	
+	sprintf(Header, "HTTP/1.0 %d %s\nContent-length: %d\nContent-type: %s\n\n", status, s, fileSize, t);
+}
+
+int executeCommandLine(char * command, int sock)
+{
+	/*
+	execute the command on the command line and get the output
+	*/	
+	FILE *fp;
+	char path[1035];
+  	/* Open the command for reading. */
+	fp = popen(command, "r");
+	if (fp == NULL) 
+	{
+		printf("Failed to run command\n" );
+		return -1;
+	}
+	/* Read the output a line at a time - output it. */
+	while (fgets(path, sizeof(path)-1, fp) != NULL) 
+	{
+		write(sock, path, strlen(path));	
+  	}
+}
+
+void SendResponse(int status, int file, char * fileExt, char * fullPathToFile, int sock)
+{
+	char * content;
+	int fileSize;
+	int readBytes;
+	int bufferLength = 1000;
+	char buffer[bufferLength];
+	char Header[1024];
+	int fileType;
+
+	//We have an error document
+	if(file == NO_FILE)
+	{
+		content = getErrorDocument(status);
+		fileSize = strlen(content);
+		fileType = HTML;
+	}
+	//we are reading from the file to get the contents
+	else
+	{	
+		fileSize = lseek(file,(off_t) 0, SEEK_END);
+		lseek(file, (off_t)0, SEEK_SET);
+
+
+		/*
+		Get the file type of the document
+		*/
+		if(strcmp(fileExt, "jpg") == 0 || strcmp(fileExt, "jpeg") == 0 || strcmp(fileExt, "jpe") == 0)
+		{
+			fileType = JPEG;
+		}
+		else if(strcmp(fileExt, "html") == 0 || strcmp(fileExt, "htm") == 0)
+		{
+			fileType = HTML;
+		}
+		else if(strcmp(fileExt, "bmp") == 0)
+		{
+			fileType = BITMAP;
+		}
+		else if(strcmp(fileExt, "php") == 0 || strcmp(fileExt, "cgi") == 0)
+		{
+			fileType = HTML;
+		}
+		else
+		{
+			/*
+			If we had an error recall the SendResponse function with the proper error code
+			*/
+			SendResponse(500, NO_FILE, NULL, NULL, sock);
+			return;
+		}
+	}	
+
+	buildHeader(Header, status, fileSize, fileType);
+
+	write(sock, Header, strlen(Header));
+	if(file == NO_FILE)
+	{
+		write(sock, content, strlen(content));
+	}
+	else
+	{
+		if(strcmp(fileExt, "php") == 0)
+		{
+			char command[128];
+			sprintf(command, "php %s", fullPathToFile);
+			if(executeCommandLine(command, sock) < 0)
+			{
+				SendResponse(500, NO_FILE, NULL, NULL, sock);
+			}
+		}
+		else if(strcmp(fileExt, "cgi") == 0)
+		{
+			if(executeCommandLine(fullPathToFile, sock) < 0)
+			{
+				SendResponse(500, NO_FILE, NULL, NULL, sock);
+			}
+		}
+		else
+		{
+			/*
+			read the file into the content string
+			*/
+			while((readBytes = read(file, buffer, bufferLength)) > 0)//read the file
+			{
+				write(sock, buffer, readBytes);
+			}
+		}
 	}
 }
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 void SendDataBin(char *fileToSend, int sock, char *home, char *content) {
-        int f;
 	char fullPathToFile[256];
-	char Header[1024];
-        int s;
-        char buffer[1000];
 	int fret;		/* return value of TypeOfFile() */
-
-	bzero(buffer, sizeof(buffer));
-
-	/*
-	 * Build the header
-	 */
-	bzero(Header, sizeof(Header));
-	strcpy(Header, "HTTP/1.0 200 OK\nContent-length: 112032\nContent-type: text/html\n\n");
-
-
-
 	/*
 	 * Build the full path to the file
 	 */
@@ -107,50 +246,39 @@ void SendDataBin(char *fileToSend, int sock, char *home, char *content) {
 	
 	if(fret == DIRECTORY)
 	{
-		sprintf(fullPathToFile, "%s/%s", fullPathToFile,"index.html");
+		if(strcmp(fileToSend, "/cgi-bin") == 0)
+		{
+			sprintf(fullPathToFile, "%s/%s", fullPathToFile, "index.cgi");
+		}
+		else
+		{
+			sprintf(fullPathToFile, "%s/%s", fullPathToFile,"index.html");
+		}
 	}
-	else if(fret == ERROR_FILE)
+	else if(fret == ERROR_FILE || fret == -1)
 	{
 		fprintf(stderr, "ERROR Getting File");
 		fflush(stderr);
-		exit(-3);
+		SendResponse(404, NO_FILE, NULL, NULL, sock);
+		return;
 	}
-	
-	/*
-	 * - If the requested file is a directory, append the 'index.html' 
-    	 *   file to the end of the fullPathToFile 
-	 *   (Use TypeOfFile(fullPathToFile))
-	 * - If the requested file is a regular file, do nothing and proceed
-	 * - else your client requested something other than a directory 
-	 *   or a reqular file
-	 */
-	/* TODO 5 */
 
-
-
-	/*
-	 * 1. Send the header (use write())
-	 * 2. open the requested file (use open())
-	 * 3. now send the requested file (use write())
-	 * 4. close the file (use close())
-	 */
-
-	 /* TODO 6 */
-	write(sock, &Header, sizeof(Header));
 	int file;
+	int i;
+	char fileExt[4];
+	char period[] = ".";
+	
+	i = strcspn(fullPathToFile, period);
+	strcpy(fileExt, &fullPathToFile[i+1]);
+	
 	if((file = open(fullPathToFile, O_RDONLY)) < 0)
 	{
 		fprintf(stderr, "FILE: %s", fullPathToFile);
 		perror("COULD NOT OPEN FILE");
+		SendResponse(404, NO_FILE, NULL, NULL, sock);
 		exit(-4);
 	}
-	
-	int r;
-	while((r = read(file, buffer, 1000)) > 0)
-	{
-		fflush(stdout);
-		write(sock, buffer, sizeof(buffer));
-	}
+	SendResponse(200, file, fileExt, fullPathToFile, sock);
 	close(file);
 }
 
@@ -319,19 +447,18 @@ int main(int argc, char **argv, char **environ) {
 					printf("%s", buff);
 					fflush(stdout);
 				}
-				
 				char method[3];
 				strncpy(method, buff, 3);
 				int cmp;
 				if(strcmp(method, "GET") == 0)
 				{
-					printf("Get Request\n");
+					printf("GET Request for ");
 					fflush(stdout);
 					//this is a GET request
 					bzero(file_request, sizeof(file_request));
 					ExtractFileRequest(file_request, buff);
 					
-					printf("** File Requested: |%s|\n", file_request);
+					printf(" |%s|\n", file_request);
 					fflush(stdout);
 				
 					SendDataBin(file_request, newsock, myhome, content);

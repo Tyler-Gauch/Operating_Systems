@@ -2,4 +2,4 @@ COMP = gcc
 CFLAGS = 
 
 main:
-	$(COMP) -o server web_server.c
+	$(COMP) $(CFLAGS) -o server web_server.c
